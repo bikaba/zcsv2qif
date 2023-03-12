@@ -20,46 +20,59 @@ my $out = Finance::QIF->new( file => ">" . $qiffile, );
 my $row = $csv->getline( *STDIN ) ;
 
 # Zaim CSV row Index values
-my $dateIdx = 0;
-my $categoryIdx = 3;
-my $accountIdx = 4;
-my $memoIdx = 6;
-my $payeeIdx = 8;
-my $amountIdx = 11;
+my $dateIdx = 0;			# 日付
+my $categoryIdx = 2;		# カテゴリ
+my $subCategoryIdx = 3;		# カテゴリの内訳
+my $accountIdx = 4;			# 支払元
+my $itemIdx = 6;			# 品目
+my $memoIdx = 7;			# メモ
+my $payeeIdx = 8;			# お店
+my $amountIdx = 11;			# 支出
 
 # read transactions
 my @records;
 my $pattern = "";
 my $csvref = $csv->getline_all(*STDIN);
-my @sorted = sort { $a->[$dateIdx] cmp $b->[$dateIdx]
+my @sorted = sort { $a->[$accountIdx] cmp $b->[$accountIdx] 
                                     ||
-                    $a->[$payeeIdx] cmp $b->[$payeeIdx] } @$csvref;
+					$a->[$payeeIdx] cmp $b->[$payeeIdx]
+                                    ||
+					$a->[$dateIdx] cmp $b->[$dateIdx] } @$csvref;
+
+#my %record = (
+#	payee   => "",
+#	account => ""
+#);
+my %record;
+$record{payee} = "";
+$record{account} = "";
 
 foreach my $row (@sorted) {
 #    print "$row->[$dateIdx],$row->[$payeeIdx],$row->[$memoIdx],$row->[$amountIdx]\n";
+#	print $record{payee} . " : " . $record{account} . "\n"  if $record{payee} ne "";
 
 	# create new transaction
-	if (length($pattern) == 0 or $row->[$payeeIdx] !~ /$pattern/) {	
-		push @records, $record if length($pattern) > 0;
-		$pattern = $row->[$payeeIdx];
-		undef($record);
-		my $record = {};
+	# 直前のrecordと支払先または支払元が異なる場合に次のレコードとする
+	if (($row->[$payeeIdx] ne $record{payee}) || ($row->[$accountIdx] ne $record{account})) {
+		my %record_save = %record;
+		push @records, \%record_save if $record{payee} ne "";
+		$record{header} = "Type:Bank";
+		$record{payee} = $row->[$payeeIdx];
+		$record{total} = 0;
+		$record{date} = $row->[$dateIdx];
+		$record{account} = $row->[$accountIdx];
+		$record{splits} = [];
 	}
-	$record->{header} = "Type:Bank";
-	$record->{payee} = $row->[$payeeIdx];
-	$record->{total} = 0;
-	$record->{date} = $row->[$dateIdx];
-	$record->{account} = $row->[$accountIdx];
 
 	# create new split
 	my $split = {
-		"memo"		=> $row->[$memoIdx],
-		"amount"	=> -($row->[$amountIdx]),
-		"category"	=> $row->[$categoryIdx],
+		'memo'		=> $row->[$itemIdx] . $row->[$memoIdx],
+		'amount'	=> -($row->[$amountIdx]),
+		'category'	=> $row->[$categoryIdx] . ":" . $row->[$subCategoryIdx],
 	};
-	push @{$record->{splits}}, $split;
+	push $record{splits}, $split;
 }
-push @records, $record if $pattern !~ /""/;
+push @records, \%record;
 
 $csv->eof or $csv->error_diag();
 $csv->eol ("\r\n");
@@ -71,16 +84,15 @@ my $account = {
 	"type"			=> "Bank",
 };
 
-foreach my $record (@records) {
-	if ($account->{name} ne $record->{account}) {
-		$account->{name} = $record->{account};
-		$account->{description} = $record->{account};
+foreach my $recref (@records) {
+	if ($account->{name} ne $recref->{account}) {
+		$account->{name} = $recref->{account};
+		$account->{description} = $recref->{account};
 		$out->header($account->{header});
 		$out->write($account);
 	}
-	delete $record->{account};
-	$out->header($record->{header});
-	$out->write($record);
+	$out->header($recref->{header});
+	$out->write($recref);
 }
 
 $out->close;
