@@ -31,7 +31,6 @@ my $amountIdx = 11;			# 支出
 
 # read transactions
 my @records;
-my $pattern = "";
 my $csvref = $csv->getline_all(*STDIN);
 my @sorted = sort { $a->[$accountIdx] cmp $b->[$accountIdx] 
                                     ||
@@ -52,8 +51,10 @@ foreach my $row (@sorted) {
 #	print $record{payee} . " : " . $record{account} . "\n"  if $record{payee} ne "";
 
 	# create new transaction
-	# 直前のrecordと支払先または支払元が異なる場合に次のレコードとする
-	if (($row->[$payeeIdx] ne $record{payee}) || ($row->[$accountIdx] ne $record{account})) {
+	# 直前のrecordと日付、支払先または支払元が異なる場合に次のレコードとする
+	if (($row->[$dateIdx] ne $record{date}) ||
+		($row->[$payeeIdx] ne $record{payee}) ||
+		($row->[$accountIdx] ne $record{account})) {
 		my %record_save = %record;
 		push @records, \%record_save if $record{payee} ne "";
 		$record{header} = "Type:Bank";
